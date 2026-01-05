@@ -134,7 +134,37 @@ const handleAddVoter = async (e: React.FormEvent<HTMLFormElement>) => {
   
       if (insertError) {
         if (insertError.code === '23505') {
-          setError('A voter with this voter ID already exists.')
+          // Duplicate voter_id - fetch existing voter and monitor info
+          try {
+            const { data: existingVoter, error: fetchVoterError } = await supabase
+              .from('voters')
+              .select('monitor_id')
+              .eq('voter_id', voter_id)
+              .single()
+            
+            if (!fetchVoterError && existingVoter?.monitor_id) {
+              // Fetch monitor details
+              const { data: monitor, error: fetchMonitorError } = await supabase
+                .from('monitors')
+                .select('email, name')
+                .eq('id', existingVoter.monitor_id)
+                .single()
+              
+              if (!fetchMonitorError && monitor) {
+                const monitorInfo = monitor.email || monitor.name || existingVoter.monitor_id
+                setError(`This voter is already assigned to monitor: ${monitorInfo}`)
+              } else {
+                // Fallback if monitor table doesn't exist or RLS prevents access
+                setError('This voter is already assigned to another monitor.')
+              }
+            } else {
+              // Fallback if we can't fetch the voter (RLS restriction)
+              setError('A voter with this voter ID already exists.')
+            }
+          } catch (fetchErr: any) {
+            // Graceful error handling
+            setError('A voter with this voter ID already exists.')
+          }
         } else {
           setError(insertError.message || 'Failed to add voter')
         }
